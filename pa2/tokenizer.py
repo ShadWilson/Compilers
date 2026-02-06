@@ -41,31 +41,41 @@ class Tokenizer:
                 return Token(TokenType.ASSIGN, lexeme = f"{char}")
             
             case '(':
-                raise NotImplementedError
+                return Token(TokenType.LPAREN, lexeme = f"{char}")
                 
             case ')': 
-                raise NotImplementedError
+                return Token(TokenType.RPAREN, lexeme = f"{char}")
             
             case '+':
-                raise NotImplementedError
+                return Token(TokenType.PLUS, lexeme = f"{char}")
             
             case '-':
-                raise NotImplementedError
+                return Token(TokenType.MINUS, lexeme = f"{char}")
             
             case '*':
-                raise NotImplementedError
+                return Token(TokenType.TIMES, lexeme = f"{char}")
             
             case '/':
-                raise NotImplementedError
+                return Token(TokenType.DIVIDE, lexeme = f"{char}")
             
             case '^':
-                raise NotImplementedError
+                return Token(TokenType.EXPONENT, lexeme = f"{char}")
             
             case 'i':
-                raise NotImplementedError
+                nextchar = self.cs.read()
+                while nextchar in {' ', '\n', '\r', '\t'}:
+                    nextchar = self.cs.read()
+                if nextchar in RESERVED:
+                    raise ValueError(f"Invalid variable character: '{nextchar}'")
+                return Token(TokenType.INTDEC, lexeme = f"{char + nextchar}", name=nextchar )
 
             case 'p':
-                raise NotImplementedError
+                nextchar = self.cs.read()
+                while nextchar in {' ', '\n', '\r', '\t'}:
+                    nextchar = self.cs.read()
+                if nextchar in RESERVED:
+                    raise ValueError(f"Invalid variable character: '{nextchar}'")
+                return Token(TokenType.PRINT, lexeme = f"{char + nextchar}", name=nextchar)
             
             case _:
                 pass # Move on to secondary inspection to handle digits, vars, error case
@@ -77,9 +87,9 @@ class Tokenizer:
 
         if char.isalpha():
             if char not in VALID_VARS:
-                raise ValueError(f"Invalid variable character: {char}")
+                raise ValueError(f"Invalid variable character: {char!r}")
             else:
-                raise NotImplementedError
+                return Token(TokenType.VARREF, lexeme = f"{char}")
            
         raise ValueError(f"Unexpected character: {char!r}")
         
@@ -89,11 +99,11 @@ class Tokenizer:
         
         digits: list[str] = []
         digits.append(firstchar)
-        #if CONDITION:
-        #    raise ValueError("Integer literal cannot have a leading zero")
+        if firstchar == '0' and self.cs.peek().isdigit():
+            raise ValueError("Integer literal cannot have a leading zero")
 
-        #while not self.cs.eof() and SOMETHING:
-        #    digits.append(SOMETHING)
+        while not self.cs.eof() and self.cs.peek().isdigit():
+            digits.append(self.cs.read())
 
         lexeme = ''.join(digits)
 
