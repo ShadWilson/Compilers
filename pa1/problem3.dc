@@ -1,6 +1,6 @@
 4 sx
 3 sy
 lx ly + sa
-lx d * 2 lx ly * * + ly d * + lb
-la d * lb -
-n
+lx d * 2 lx ly * * + ly d * + sb
+la d * lb - se
+le n
