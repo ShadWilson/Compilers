@@ -81,21 +81,13 @@ def stmtcodegen(statement: ASTNode) -> InstructionList:
                 code.append("1")
                 return code
 
-            # Generate base ONCE
-            basecode = stmtcodegen(statement.left)
-            code.extend(basecode)
-
-            # Duplicate base (exponent - 1) times
             for _ in range(exponent - 1):
                 code.append("d")
-
-            # Multiply them all together
             for _ in range(exponent - 1):
                 code.append("*")
 
             return code
 
-     # All other binary operators
         leftcode = stmtcodegen(statement.left)
         rightcode = stmtcodegen(statement.right)
 
