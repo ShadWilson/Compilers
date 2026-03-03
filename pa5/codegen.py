@@ -66,6 +66,36 @@ def stmtcodegen(statement: ASTNode) -> InstructionList:
     
 
     if isinstance(statement, BinOpNode):
+
+        if statement.op == "^":
+
+            if not isinstance(statement.right, IntLitNode):
+                raise ValueError("Exponent must be an integer literal")
+
+            exponent = statement.right.value
+
+            if exponent < 0:
+                raise ValueError("Negative exponents not supported")
+
+            if exponent == 0:
+                code.append("1")
+                return code
+
+            # Generate base ONCE
+            basecode = stmtcodegen(statement.left)
+            code.extend(basecode)
+
+            # Duplicate base (exponent - 1) times
+            for _ in range(exponent - 1):
+                code.append("d")
+
+            # Multiply them all together
+            for _ in range(exponent - 1):
+                code.append("*")
+
+            return code
+
+     # All other binary operators
         leftcode = stmtcodegen(statement.left)
         rightcode = stmtcodegen(statement.right)
 
@@ -80,23 +110,7 @@ def stmtcodegen(statement: ASTNode) -> InstructionList:
             code.append("*")
         elif statement.op == "/":
             code.append("/")
-        elif statement.op == "^":
-            if not isinstance(statement.right, IntLitNode):
-                code.append("^")
-            exponent = statement.right.value
-            if exponent == 0:
-                code.append("1")
-                return code
-            basecode = stmtcodegen(statement.left)
-            code.extend(basecode)
-            if exponent == 1:
-                return code
-            for _ in range(exponent - 1):
-                code.append("d")
-                code.append("*")
-            else:
-                raise ValueError(f"Unknown operator {statement.op}")
-    
+        else:
+            raise ValueError(f"Unknown operator {statement.op}")
 
-    # Should never get here
-    return code
+        return code
