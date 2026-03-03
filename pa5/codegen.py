@@ -47,12 +47,13 @@ def stmtcodegen(statement: ASTNode) -> InstructionList:
 
 
     if isinstance(statement, VarRefNode):
-        code.append(f"l{statement.name}")
+        code.append(f"l{statement.varname}")
         return code
     
     if isinstance(statement, PrintNode):
-        exprcode = stmtcodegen(statement.expr)
-        code.extend(exprcode)
+        #exprcode = stmtcodegen(statement.varname)
+        #code.extend(exprcode)
+        code.append(f"l{statement.varname}")
         code.append("p")
         return code
 
@@ -61,16 +62,21 @@ def stmtcodegen(statement: ASTNode) -> InstructionList:
     if isinstance(statement, AssignNode):
         exprcode = stmtcodegen(statement.expr)
         code.extend(exprcode)
-        code.append(f"s{statement.name}")
+        code.append(f"s{statement.varname}")
         return code
     
 
     if isinstance(statement, BinOpNode):
 
-        if statement.op == "^":
+        leftcode = stmtcodegen(statement.left)
+        code.extend(leftcode)
+        if statement.optype == TokenType.EXPONENT:
 
             if not isinstance(statement.right, IntLitNode):
-                raise ValueError("Exponent must be an integer literal")
+                rightcode = stmtcodegen(statement.right)
+                code.extend(rightcode)
+                code.append("^")   # if your dc supports ^
+                return code
 
             exponent = statement.right.value
 
@@ -78,6 +84,7 @@ def stmtcodegen(statement: ASTNode) -> InstructionList:
                 raise ValueError("Negative exponents not supported")
 
             if exponent == 0:
+                code = InstructionList()
                 code.append("1")
                 return code
 
@@ -88,21 +95,20 @@ def stmtcodegen(statement: ASTNode) -> InstructionList:
 
             return code
 
-        leftcode = stmtcodegen(statement.left)
+        
         rightcode = stmtcodegen(statement.right)
 
-        code.extend(leftcode)
         code.extend(rightcode)
 
-        if statement.op == "+":
+        if statement.optype == TokenType.PLUS:
             code.append("+")
-        elif statement.op == "-":
+        elif statement.optype == TokenType.MINUS:
             code.append("-")
-        elif statement.op == "*":
+        elif statement.optype == TokenType.TIMES:
             code.append("*")
-        elif statement.op == "/":
+        elif statement.optype == TokenType.DIVIDE:
             code.append("/")
         else:
-            raise ValueError(f"Unknown operator {statement.op}")
+            raise ValueError(f"Unknown operator {statement.optype}")
 
         return code
