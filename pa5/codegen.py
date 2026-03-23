@@ -68,14 +68,18 @@ def stmtcodegen(statement: ASTNode) -> InstructionList:
 
     if isinstance(statement, BinOpNode):
 
+        # LEFT FIRST
         leftcode = stmtcodegen(statement.left)
         code.extend(leftcode)
+
+        # ---------- EXPONENT ----------
         if statement.optype == TokenType.EXPONENT:
 
+            # variable exponent → just use ^
             if not isinstance(statement.right, IntLitNode):
                 rightcode = stmtcodegen(statement.right)
                 code.extend(rightcode)
-                code.append("^")   # if your dc supports ^
+                code.append("^")
                 return code
 
             exponent = statement.right.value
@@ -88,16 +92,17 @@ def stmtcodegen(statement: ASTNode) -> InstructionList:
                 code.append("1")
                 return code
 
+            # base already on stack once
             for _ in range(exponent - 1):
-                code.append("d")
+                code.append("d")   # duplicate
+
             for _ in range(exponent - 1):
-                code.append("*")
+                code.append("*")   # multiply
 
             return code
 
-        
+        # ---------- NORMAL BINOPS ----------
         rightcode = stmtcodegen(statement.right)
-
         code.extend(rightcode)
 
         if statement.optype == TokenType.PLUS:
@@ -108,7 +113,19 @@ def stmtcodegen(statement: ASTNode) -> InstructionList:
             code.append("*")
         elif statement.optype == TokenType.DIVIDE:
             code.append("/")
+        elif statement.optype == TokenType.MOD:
+            code.append("%")
         else:
             raise ValueError(f"Unknown operator {statement.optype}")
+
+        return code
+    if isinstance(statement, UnaryOpNode):
+        operandcode = stmtcodegen(statement.right)
+        code.extend(operandcode)
+
+        if statement.optype == TokenType.SQRT:
+            code.append("v")
+        else:
+            raise ValueError(f"Unknown unary operator {statement.optype}")
 
         return code

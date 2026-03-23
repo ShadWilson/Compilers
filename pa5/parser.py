@@ -53,9 +53,11 @@ def parse_expression(ts: TokenStream) -> ASTNode:
     valstack = []  # stack of ASTNodes
 
     precedence = {
+        TokenType.SQRT: 4,
         TokenType.EXPONENT: 3,
         TokenType.TIMES: 2,
         TokenType.DIVIDE: 2,
+        TokenType.MOD: 2,
         TokenType.PLUS: 1,
         TokenType.MINUS: 1,
     }
@@ -67,6 +69,8 @@ def parse_expression(ts: TokenStream) -> ASTNode:
         TokenType.DIVIDE: True,
         TokenType.PLUS: True,
         TokenType.MINUS: True,
+        TokenType.MOD: True,
+        TokenType.SQRT: False,
     }
 
     operatortypes = {
@@ -75,6 +79,7 @@ def parse_expression(ts: TokenStream) -> ASTNode:
         TokenType.TIMES,
         TokenType.DIVIDE,
         TokenType.EXPONENT,
+        TokenType.MOD,
     }
 
     while ts.peek().tokentype != TokenType.EOF:
@@ -116,12 +121,21 @@ def parse_expression(ts: TokenStream) -> ASTNode:
                 reduce(opstack, valstack)
             continue
 
+        if tok.tokentype == TokenType.SQRT:
+            ts.read()
+            next_tok = ts.peek()
+            if next_tok.tokentype not in {TokenType.LPAREN, TokenType.INTLIT, TokenType.VARREF}:
+                raise ParseError("Expected operand after sqrt")
+
+            opstack.append(Token(TokenType.SQRT, "v"))
+            continue
+
         if tok.tokentype in operatortypes:
             incoming = ts.read()  # consume operator
             next_tok =ts.peek()
             if next_tok.tokentype not in {TokenType.LPAREN, TokenType.INTLIT, TokenType.VARREF}:
                 raise ParseError("Expected operand or lparen after operator")
-            while len(opstack) > 0 and opstack[-1].tokentype in operatortypes:
+            while len(opstack) > 0 and opstack[-1].tokentype != TokenType.LPAREN:
                 top = opstack[-1]
 
                 top_prec = precedence[top.tokentype]
@@ -156,26 +170,27 @@ def parse_expression(ts: TokenStream) -> ASTNode:
 
 
 def reduce(opstack: list, valstack: list) -> None:
-    """Pop one operator and two operands to build a BinOpNode and push it back."""
-    # Check to make sure there actually is something to pop from each stack 
-    # If not, raise error
-    # If so, pop two from valstack as rhs and lhs
-    # And pop operator from opstack
-    # Then combine them to produce a new AST node
-    # Finally, push back onto valstack
     if len(opstack) == 0:
         raise ParseError("Operator stack empty during reduction")
 
+    op = opstack.pop()
+
+    # ---------- UNARY (SQRT) ----------
+    if op.tokentype == TokenType.SQRT:
+        if len(valstack) < 1:
+            raise ParseError("Expected one operand for SQRT")
+        operand = valstack.pop()
+        valstack.append(UnaryOpNode(op.tokentype, operand))
+        return
+
+    # ---------- BINARY ----------
     if len(valstack) < 2:
-        op = opstack[-1]
         raise ParseError(f"Expected two operands for operator {op.tokentype}")
 
-    op = opstack.pop()
     rhs = valstack.pop()
     lhs = valstack.pop()
 
-    node = BinOpNode(op.tokentype, lhs, rhs)
-    valstack.append(node)
+    valstack.append(BinOpNode(op.tokentype, lhs, rhs))
 
 
 def expect(ts: TokenStream, expectedtype: TokenType) -> Token:

@@ -3,7 +3,7 @@ from tokens import Token, TokenType
 from tokenstream import TokenStream
 import string
 
-RESERVED = {'i', 'f', 'o', 'n', 'p', 'l', 's'}
+RESERVED = {'i', 'f', 'o', 'n', 'p', 'l', 's', 'v'}
 VALID_VARS = set(string.ascii_lowercase) - RESERVED
 
 class Tokenizer:
@@ -61,6 +61,12 @@ class Tokenizer:
             case '^':
                 return Token(TokenType.EXPONENT, lexeme = f"{char}")
             
+            case '%':
+                return Token(TokenType.MOD, lexeme = f"{char}")
+            
+            case 'v':
+                return Token(TokenType.SQRT, lexeme = f"{char}")
+
             case 'i':
                 nextchar = self.cs.read()
                 while nextchar in {' ', '\n', '\r', '\t'}:

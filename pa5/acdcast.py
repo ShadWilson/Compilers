@@ -44,6 +44,10 @@ class AssignNode(ASTNode):
     def __repr__(self):
         return f"[AssignNode varname={self.varname!r} expr={self.expr!r}]"
 
+class UnaryOpNode(ASTNode):
+    def __init__(self, optype: TokenType, right):
+        self.optype = optype
+        self.right = right
 
 class BinOpNode(ASTNode):
     def __init__(self, optype: TokenType, left, right):

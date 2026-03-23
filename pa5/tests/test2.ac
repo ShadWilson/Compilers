@@ -1,7 +1,6 @@
 ia
 ib
-ic
-a = 2
-b = 3
-c = a^b + b^a
-pc
+a = 6%2
+b = 3%5
+pa
+pb

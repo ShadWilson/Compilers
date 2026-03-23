@@ -73,6 +73,9 @@ def _semantic_check_expr(expr: ASTNode, declared: list[str], initialized: list[s
         _semantic_check_expr(expr.left, declared, initialized, linenumber)
         _semantic_check_expr(expr.right, declared, initialized, linenumber)
         return
+    elif isinstance(expr, UnaryOpNode):
+        _semantic_check_expr(expr.right, declared, initialized, linenumber)
+        return
     
     raise SemanticError(f"Unknown expression type at line {linenumber}")
     # Catches any weird statement types; this should never happen for a validly parsed program

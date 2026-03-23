@@ -11,6 +11,8 @@ class TokenType(Enum):
     TIMES = '*'
     DIVIDE = '/'
     EXPONENT = '^'
+    MOD = '%'
+    SQRT = 'v'
     LPAREN = 10
     RPAREN = 11
     EOF = 12
