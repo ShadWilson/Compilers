@@ -1,7 +1,7 @@
 ia
 ib
 ic
-a = 2
+a = 4
 b = 5
-c = (a + 1)^(b - 2)
+c = (v a)^(b - 2)
 pc

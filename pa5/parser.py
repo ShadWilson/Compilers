@@ -105,7 +105,7 @@ def parse_expression(ts: TokenStream) -> ASTNode:
             # Push tok to operator stack and continue
             opstack.append(ts.read())
             next_tok=ts.peek()
-            if next_tok.tokentype not in {TokenType.LPAREN, TokenType.INTLIT, TokenType.VARREF}:
+            if next_tok.tokentype not in {TokenType.LPAREN, TokenType.INTLIT, TokenType.VARREF, TokenType.SQRT}:
                 raise ParseError("Expected lparen, intlit, or varref after lparen")
             continue
 
