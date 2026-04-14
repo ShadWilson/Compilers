@@ -1,0 +1,527 @@
+import sys
+import os
+
+from .CodeObject import CodeObject
+from .InstructionList import InstructionList
+from .instructions import *
+from ..compiler import *
+from ..ast import *
+from ..ast.visitor.AbstractASTVisitor import AbstractASTVisitor
+
+class CodeGenerator(AbstractASTVisitor):
+
+  def __init__(self):
+    self.intRegCount = 1 # Changed from 0 so t0 is never used, this way maybe we could use t0 for the constant 0 register
+    self.floatRegCount = 1 
+    self.intTempPrefix = 't'
+    self.floatTempPrefix = 'f'
+    self.numCtrlStructs = 0
+
+    # Put code here for label counting
+
+
+
+  def getIntRegCount(self):
+    return self.intRegCount
+
+  def getFloatRegCount(self):
+    return self.floatRegCount
+
+  # Generate code for Variables
+  #
+  # Create a code object that just holds a variable
+  # Important: add a pointer from the code object to the symbol table entry so
+  # we know how to generate code for it later (we'll need it to find the
+  # address)
+  #
+  # Mark the code object as holding a variable, and also as an lval
+
+  def postprocessVarNode(self, node: VarNode) -> CodeObject:
+    sym = node.getSymbol()
+
+    co = CodeObject(sym)
+    co.lval = True
+    co.type = node.getType()
+
+    return co
+
+
+
+  
+  def postprocessIntLitNode(self, node: IntLitNode) -> CodeObject:
+    co = CodeObject()
+
+    temp = self.generateTemp(Scope.Type.INT)
+    val = node.getVal()
+    # LI t2, 5
+    co.code.append(Li(temp, val))
+    co.temp = temp
+    co.lval = False
+    co.type = node.getType()
+
+    return co
+
+
+  def postprocessFloatLitNode(self, node: FloatLitNode) -> CodeObject:
+    co = CodeObject()
+
+    temp = self.generateTemp(Scope.Type.FLOAT)
+    val = node.getVal()
+
+    co.code.append(FImm(temp, val))
+    co.temp = temp
+    co.lval = False
+    co.type = node.getType()
+
+    return co
+  
+
+  def postprocessBinaryOpNode(self, node: BinaryOpNode, left: CodeObject, right: CodeObject) -> CodeObject:
+    co = CodeObject()
+    newcode = CodeObject()
+
+    #print("Left: ", left, "Left Type: ", left.type)
+    #print("Right: ", right, "Right Type: ", right.type)
+    #print("Optype: ", str(node.op))
+
+    optype = str(node.op) # Get string corresponding to the operation (+, -, *, /)
+    #Step 1: add code from left child
+    
+    #Step 1a: check if left child is an lval or rval; if lval, rvalify
+    if left.lval == True:
+      left = self.rvalify(left) # create new code object, fix this, this is bad?
+      #print("Left type after rvalify:", left.type)
+    co.code.extend(left.code)
+
+    #Step 2: add code from right child
+
+    if right.lval == True:
+      right = self.rvalify(right)
+    
+    co.code.extend(right.code)
+  
+    #Step 2a: check if left child is an lval or rval; if lval, rvalify
+
+    #Step 3: generate correct binop.  8 cases for 4 ops, float vs. int. for 4 arithmetic ops.
+
+    if left.type != right.type:
+      print("Incompatible types in binary operation!\n")
+    
+    # Get appropriate new temporary for result of operation
+    if left.type == Scope.Type.INT:
+      #print("Processing binop with INTs")
+      newtemp = self.generateTemp(Scope.Type.INT)
+      if optype == "OpType.ADD":
+        newcode = Add(left.temp, right.temp, newtemp)
+      elif optype == "OpType.SUB":
+        newcode = Sub(left.temp, right.temp, newtemp)
+      elif optype == "OpType.MUL":
+        newcode = Mul(left.temp, right.temp, newtemp)
+      elif optype == "OpType.DIV":
+        newcode = Div(left.temp, right.temp, newtemp)
+      else:
+        print("Bad operation in binop!\n")
+
+
+    elif left.type == Scope.Type.FLOAT:
+      newtemp = self.generateTemp(Scope.Type.FLOAT)
+      if optype == "OpType.ADD":
+        newcode = FAdd(left.temp, right.temp, newtemp)
+      elif optype == "OpType.SUB":
+        newcode = FSub(left.temp, right.temp, newtemp)
+      elif optype == "OpType.MUL":
+        newcode = FMul(left.temp, right.temp, newtemp)
+      elif optype == "OpType.DIV":
+        newcode = FDiv(left.temp, right.temp, newtemp)
+      else:
+        print("Bad operation in binop!\n")
+
+    else:
+      print("Bad type in binary op!\n")
+
+
+    #Step 4: update temp, lval etc., return code object
+
+
+    co.code.append(newcode)
+    co.lval = False
+    co.temp = newtemp
+    co.type = left.type
+    #print(newcode)
+    return co
+	 
+
+
+
+  def postprocessUnaryOpNode(self, node: UnaryOpNode, expr: CodeObject) -> CodeObject:
+    co = CodeObject()  # Step 0
+
+    
+    if expr.lval:
+      expr = self.rvalify(expr)
+
+    co.code.extend(expr.code) # Add in all the code required to get expr after rvalifying
+
+
+    if expr.type == Scope.Type.INT:
+      temp = self.generateTemp(Scope.Type.INT)
+      co.code.append(Neg(src=expr.temp, dest=temp))
+      
+
+    elif expr.type == Scope.Type.FLOAT:
+      temp = self.generateTemp(Scope.Type.FLOAT)
+      co.code.append(FNeg(src=expr.temp, dest=temp))
+
+    else:
+      raise Exception("Non int/float type in unary op!")
+
+    co.type = expr.type
+    co.temp = temp
+    co.lval = False 
+
+    return co
+
+  def postprocessAssignNode(self, node: AssignNode, left: CodeObject, right: CodeObject) -> CodeObject:
+    co = CodeObject()
+
+    if right.lval:
+        right = self.rvalify(right)
+
+    co.code.extend(right.code)
+
+    address = self.generateAddrFromVariable(left)
+    addrTemp = self.generateTemp(Scope.Type.INT)
+    co.code.append(La(addrTemp, address))
+
+    if left.type == Scope.Type.INT:
+        co.code.append(Sw(right.temp, addrTemp, '0'))
+    elif left.type == Scope.Type.FLOAT:
+        co.code.append(Fsw(right.temp, addrTemp, '0'))
+    else:
+        raise Exception("Invalid type in assignment")
+
+    return co
+
+  def postprocessStatementListNode(self, node: StatementListNode, statements: list) -> CodeObject:
+    co = CodeObject()
+
+    for subcode in statements:
+      if subcode is None:
+        continue
+      co.code.extend(subcode.code)
+
+    co.type = None
+    return co
+
+	 # Generate code for read
+	 # 
+	 # Step 0: create new code object
+	 # Step 1: add code from VarNode (make sure it's an lval)
+	 # Step 2: generate GetI instruction, storing into temp
+	 # Step 3: generate store, to store temp in variable
+	
+  def postprocessReadNode(self, node: ReadNode, var: CodeObject) -> CodeObject:
+    co = CodeObject()
+
+    assert(var.isVar())
+
+    if var.type is Scope.Type.INT:
+      temp = self.generateTemp(Scope.Type.INT)
+      co.code.append(GetI(temp))
+      address = self.generateAddrFromVariable(var)
+      temp2 = self.generateTemp(Scope.Type.INT)
+      co.code.append(La(temp2, address))
+      co.code.append(Sw(temp, temp2, '0'))
+
+    elif var.type == Scope.Type.FLOAT:
+      temp = self.generateTemp(Scope.Type.FLOAT)
+      co.code.append(GetF(temp))
+
+      address = self.generateAddrFromVariable(var)
+      temp2 = self.generateTemp(Scope.Type.INT)
+      co.code.append(La(temp2, address))
+
+      co.code.append(Fsw(temp, temp2, '0'))
+
+    else:
+      raise Exception("Bad type in read node")
+
+
+    return co
+	 
+
+  def postprocessWriteNode(self, node: WriteNode, expr: CodeObject) -> CodeObject:
+    co = CodeObject()
+
+    if expr.lval and expr.isVar():
+      expr = self.rvalify(expr)
+
+    co.code.extend(expr.code)
+
+    if expr.type == Scope.Type.INT:
+        co.code.append(PutI(expr.temp))
+    elif expr.type == Scope.Type.FLOAT:
+        co.code.append(PutF(expr.temp))
+    elif expr.type == Scope.Type.STRING:
+        co.code.append(PutS(expr.temp))
+    else:
+        raise Exception("Bad type in write")
+
+    return co
+
+
+
+
+  def postprocessCondNode(self, node: CondNode, left: CodeObject, right: CodeObject) -> CodeObject:
+    co = CodeObject()
+
+    if left.lval:
+        left = self.rvalify(left)
+    if right.lval:
+        right = self.rvalify(right)
+
+    co.code.extend(left.code)
+    co.code.extend(right.code)
+
+    co.temp = (left.temp, right.temp)
+    co.type = node.getOp()   # keep original operator
+    co.expr_type = left.type
+
+    return co
+
+
+
+
+  def postprocessIfStatementNode(self, node: IfStatementNode, cond: CodeObject, tlist: CodeObject, elist: CodeObject) -> CodeObject:
+    self._incrnumCtrlStruct()
+    labelnum = self._getnumCtrlStruct()
+
+    then_label = self._generateThenLabel(labelnum)
+    else_label = self._generateElseLabel(labelnum)
+    done_label = self._generateDoneLabel(labelnum)
+
+    co = CodeObject()
+
+    co.code.extend(cond.code)
+
+    left, right = cond.temp
+    op = cond.type
+
+    op_str = str(op)
+
+# branch on FALSE condition → go to else
+    if cond.expr_type == Scope.Type.FLOAT:
+      result = self.generateTemp(Scope.Type.INT)
+
+      if op_str == "<":
+        co.code.append(Flt(left, right, result))
+      elif op_str == "<=":
+        co.code.append(Fle(left, right, result))
+      elif op_str == "==":
+        co.code.append(Feq(left, right, result))
+      elif op_str == ">":
+        co.code.append(Flt(right, left, result))
+      elif op_str == ">=":
+        co.code.append(Fle(right, left, result))
+      else:
+        raise Exception(f"Unsupported float condition: {op_str}")
+
+      co.code.append(Beq(result, 'x0', else_label))
+    else:
+      if op_str == "<":
+        co.code.append(Bge(left, right, else_label))
+      elif op_str == ">":
+        co.code.append(Ble(left, right, else_label))
+      elif op_str == "<=":
+        co.code.append(Bgt(left, right, else_label))
+      elif op_str == ">=":
+        co.code.append(Blt(left, right, else_label))
+      elif op_str == "==":
+        co.code.append(Bne(left, right, else_label))
+      elif op_str == "!=":
+        co.code.append(Beq(left, right, else_label))
+      else:
+        raise Exception(f"Unsupported condition: {op_str}")
+
+    # then block
+    co.code.append(Label(then_label))
+    co.code.extend(tlist.code)
+    co.code.append(J(done_label))
+
+    # else block
+    co.code.append(Label(else_label))
+    if elist:
+        co.code.extend(elist.code)
+
+    # done
+    co.code.append(Label(done_label))
+
+    return co
+
+
+
+  def postprocessWhileNode(self, node: WhileNode, cond: CodeObject, wlist:
+  CodeObject) -> CodeObject:
+    self._incrnumCtrlStruct()
+    labelnum = self._getnumCtrlStruct()
+
+    loop_label = self._generateLoopLabel(labelnum)
+    done_label = self._generateDoneLabel(labelnum)
+
+    co = CodeObject()
+
+    co.code.append(Label(loop_label))
+
+    co.code.extend(cond.code)
+
+    left, right = cond.temp
+    op = cond.type
+    op_str = str(op)
+
+    if cond.expr_type == Scope.Type.FLOAT:
+      result = self.generateTemp(Scope.Type.INT)
+
+      if op_str == "<":
+        co.code.append(Flt(left, right, result))
+      elif op_str == "<=":
+        co.code.append(Fle(left, right, result))
+      elif op_str == "==":
+        co.code.append(Feq(left, right, result))
+      elif op_str == ">":
+        co.code.append(Flt(right, left, result))   # flip
+      elif op_str == ">=":
+        co.code.append(Fle(right, left, result))
+      else:
+        raise Exception(f"Unsupported float condition: {op_str}")
+
+      co.code.append(Beq(result, 'x0', done_label))
+
+    else:
+      if op_str == "<":
+        co.code.append(Bge(left, right, done_label))
+      elif op_str == ">":
+        co.code.append(Ble(left, right, done_label))
+      elif op_str == "<=":
+        co.code.append(Bgt(left, right, done_label))
+      elif op_str == ">=":
+        co.code.append(Blt(left, right, done_label))
+      elif op_str == "==":
+        co.code.append(Bne(left, right, done_label))
+      elif op_str == "!=":
+        co.code.append(Beq(left, right, done_label))
+      else:
+        raise Exception(f"Unsupported condition: {op_str}")
+
+    co.code.extend(wlist.code)
+
+    co.code.append(J(loop_label))
+
+    co.code.append(Label(done_label))
+
+    return co
+  
+
+
+  
+  def postprocessReturnNode(self, node: ReturnNode, retExpr: CodeObject) -> CodeObject:
+    co = CodeObject()
+
+    if retExpr.lval is True:
+      retExpr = self.rvalify(retExpr)
+
+    co.code.extend(retExpr.code)
+    co.code.append(Halt())
+    co.type = None
+    return co
+
+  
+  def generateTemp(self, t: Scope.Type) -> str:
+    if t == Scope.Type.INT:
+      s = self.intTempPrefix + str(self.intRegCount)
+      self.intRegCount += 1
+      return s
+    elif t == Scope.Type.FLOAT:
+      s = self.floatTempPrefix + str(self.floatRegCount)
+      self.floatRegCount += 1
+      return s
+    else:
+      raise Exception("Generating temp for bad type")
+
+  
+  
+
+
+
+
+  def rvalify(self, lco: CodeObject) -> CodeObject:
+    # If already rval → return
+    if not lco.lval:
+        return lco
+
+    # If not a variable → already computed
+    if not lco.isVar():
+        return lco
+
+    co = CodeObject()
+
+    address = self.generateAddrFromVariable(lco)
+    temp1 = self.generateTemp(Scope.Type.INT)
+    co.code.append(La(temp1, address))
+
+    if lco.type == Scope.Type.INT:
+        temp2 = self.generateTemp(Scope.Type.INT)
+        co.code.append(Lw(temp2, temp1, '0'))
+
+    elif lco.type == Scope.Type.FLOAT:
+        temp2 = self.generateTemp(Scope.Type.FLOAT)
+        co.code.append(Flw(temp2, temp1, '0'))
+
+    elif lco.type == Scope.Type.STRING:
+        temp2 = temp1
+
+    else:
+        raise Exception("Bad type in rvalify!")
+
+    co.type = lco.type
+    co.lval = False
+    co.temp = temp2
+
+    return co
+    
+  def generateAddrFromVariable(self, lco: CodeObject) -> str:
+     
+    ''' 
+    Don't use the exact same thing as in PA8...use this to get addresses
+    symbol = lco.getSTE()
+    address = symbol.addressToString()
+    Otherwise the hex addresses for globals will get mangled
+    '''
+    assert(lco.isVar() is True)
+
+    symbol = lco.getSTE()
+    address = symbol.addressToString()  
+
+    return address
+  
+
+
+# Here we should define functions that generate labels for conditionals and loops
+
+  def _incrnumCtrlStruct(self):
+    self.numCtrlStructs += 1
+
+  def _getnumCtrlStruct(self) -> int:
+    return self.numCtrlStructs
+  
+  def _generateThenLabel(self, num: int) -> str:
+    return "then"+str(num)
+
+  def _generateElseLabel(self, num: int) -> str:
+    return "else"+str(num)
+
+  def _generateLoopLabel(self, num: int) -> str:
+    return "loop"+str(num)
+
+  def _generateDoneLabel(self, num: int) -> str:
+    return "done"+str(num)
+  
