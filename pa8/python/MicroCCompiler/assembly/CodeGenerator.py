@@ -53,10 +53,6 @@ class CodeGenerator(AbstractASTVisitor):
 
 
   def postprocessFloatLitNode(self, node: FloatLitNode) -> CodeObject:
-    '''
-    This will look a lot like the int literal node above
-    Minor difference: use FImm instead of Li
-    '''
     co = CodeObject()
 
     temp = self.generateTemp(Scope.Type.FLOAT)
@@ -72,61 +68,75 @@ class CodeGenerator(AbstractASTVisitor):
 
 
   def postprocessBinaryOpNode(self, node: BinaryOpNode, left: CodeObject, right: CodeObject) -> CodeObject:
-    '''
-    Step 0: Create new code object
-    Step 1: Get code from left child and rvalify if needed
-    Step 2: Add left code
-    Step 3: Get code from right child and rvalify if needed
-    Step 4: Add right code
-    Step 5: Generate binary operation code using left/right's temps
-    Step 6: Update code object's fields
-    Step 7: Return it
-    '''
     co = CodeObject()
+    newcode = CodeObject()
 
-    if left.lval:
-        left = self.rvalify(left)
-    if right.lval:
-        right = self.rvalify(right)
+    #print("Left: ", left, "Left Type: ", left.type)
+    #print("Right: ", right, "Right Type: ", right.type)
+    #print("Optype: ", str(node.op))
 
+    optype = str(node.op) # Get string corresponding to the operation (+, -, *, /)
+    #Step 1: add code from left child
+    
+    #Step 1a: check if left child is an lval or rval; if lval, rvalify
+    if left.lval == True:
+      left = self.rvalify(left) # create new code object, fix this, this is bad?
+      #print("Left type after rvalify:", left.type)
     co.code.extend(left.code)
+
+    #Step 2: add code from right child
+
+    if right.lval == True:
+      right = self.rvalify(right)
+    
     co.code.extend(right.code)
+  
+    #Step 2a: check if left child is an lval or rval; if lval, rvalify
 
-    if node.type == Scope.Type.INT:
-        temp = self.generateTemp(Scope.Type.INT)
+    #Step 3: generate correct binop.  8 cases for 4 ops, float vs. int. for 4 arithmetic ops.
 
-        if node.op == '+':
-            co.code.append(Add(left.temp, right.temp, temp))
-        elif node.op == '-':
-            co.code.append(Sub(left.temp, right.temp, temp))
-        elif node.op == '*':
-            co.code.append(Mul(left.temp, right.temp, temp))
-        elif node.op == '/':
-            co.code.append(Div(left.temp, right.temp, temp))
-        else:
-            raise Exception("Unknown int op")
+    if left.type != right.type:
+      print("Incompatible types in binary operation!\n")
+    
+    # Get appropriate new temporary for result of operation
+    if left.type == Scope.Type.INT:
+      #print("Processing binop with INTs")
+      newtemp = self.generateTemp(Scope.Type.INT)
+      if optype == "OpType.ADD":
+        newcode = Add(left.temp, right.temp, newtemp)
+      elif optype == "OpType.SUB":
+        newcode = Sub(left.temp, right.temp, newtemp)
+      elif optype == "OpType.MUL":
+        newcode = Mul(left.temp, right.temp, newtemp)
+      elif optype == "OpType.DIV":
+        newcode = Div(left.temp, right.temp, newtemp)
+      else:
+        print("Bad operation in binop!\n")
 
-    elif node.type == Scope.Type.FLOAT:
-        temp = self.generateTemp(Scope.Type.FLOAT)
 
-        if node.op == '+':
-            co.code.append(FAdd(left.temp, right.temp, temp))
-        elif node.op == '-':
-            co.code.append(FSub(left.temp, right.temp, temp))
-        elif node.op == '*':
-            co.code.append(FMul(left.temp, right.temp, temp))
-        elif node.op == '/':
-            co.code.append(FDiv(left.temp, right.temp, temp))
-        else:
-            raise Exception("Unknown float op")
+    elif left.type == Scope.Type.FLOAT:
+      newtemp = self.generateTemp(Scope.Type.FLOAT)
+      if optype == "OpType.ADD":
+        newcode = FAdd(left.temp, right.temp, newtemp)
+      elif optype == "OpType.SUB":
+        newcode = FSub(left.temp, right.temp, newtemp)
+      elif optype == "OpType.MUL":
+        newcode = FMul(left.temp, right.temp, newtemp)
+      elif optype == "OpType.DIV":
+        newcode = FDiv(left.temp, right.temp, newtemp)
+      else:
+        print("Bad operation in binop!\n")
 
     else:
-        raise Exception("Unsupported type")
+      print("Bad type in binary op!\n")
 
-    co.temp = temp
+    #Step 4: update temp, lval etc., return code object
+
+    co.code.append(newcode)
     co.lval = False
-    co.type = node.type
-
+    co.temp = newtemp
+    co.type = left.type
+    #print(newcode)
     return co
 
 
@@ -175,6 +185,21 @@ class CodeGenerator(AbstractASTVisitor):
   def postprocessAssignNode(self, node: AssignNode, left: CodeObject, right: CodeObject) -> CodeObject:
     co = CodeObject()
 
+    if right.lval:
+        right = self.rvalify(right)
+
+    co.code.extend(right.code)
+
+    address = self.generateAddrFromVariable(left)
+    addrTemp = self.generateTemp(Scope.Type.INT)
+    co.code.append(La(addrTemp, address))
+
+    if left.type == Scope.Type.INT:
+        co.code.append(Sw(right.temp, addrTemp, '0'))
+    elif left.type == Scope.Type.FLOAT:
+        co.code.append(Fsw(right.temp, addrTemp, '0'))
+    else:
+        raise Exception("Invalid type in assignment")
 
     return co
 
@@ -184,6 +209,8 @@ class CodeGenerator(AbstractASTVisitor):
     co = CodeObject()
 
     for subcode in statements:
+      if subcode is None:
+        continue
       co.code.extend(subcode.code)
 
     co.type = None
@@ -205,9 +232,15 @@ class CodeGenerator(AbstractASTVisitor):
       co.code.append(La(temp2, address))
       co.code.append(Sw(temp, temp2, '0'))
 
-    elif var.type is Scope.Type.FLOAT:
-      # put stuff here
-      pass
+    elif var.type == Scope.Type.FLOAT:
+      temp = self.generateTemp(Scope.Type.FLOAT)
+      co.code.append(GetF(temp))
+
+      address = self.generateAddrFromVariable(var)
+      temp2 = self.generateTemp(Scope.Type.INT)
+      co.code.append(La(temp2, address))
+
+      co.code.append(Fsw(temp, temp2, '0'))
 
     else:
       raise Exception("Bad type in read node")
@@ -220,6 +253,20 @@ class CodeGenerator(AbstractASTVisitor):
 
     co = CodeObject()
 
+    if expr.lval and expr.isVar():
+      expr = self.rvalify(expr)
+
+    co.code.extend(expr.code)
+
+    if expr.type == Scope.Type.INT:
+        co.code.append(PutI(expr.temp))
+    elif expr.type == Scope.Type.FLOAT:
+        co.code.append(PutF(expr.temp))
+    elif expr.type == Scope.Type.STRING:
+        co.code.append(PutS(expr.temp))
+    else:
+        raise Exception("Bad type in write")
+
     return co
 
   
@@ -227,13 +274,18 @@ class CodeGenerator(AbstractASTVisitor):
 
     co = CodeObject()
 
-    if retExpr.lval is True:
-      retExpr = self.rvalify(retExpr)
+    if retExpr is not None:
+        if retExpr.lval:
+            retExpr = self.rvalify(retExpr)
 
-    co.code.extend(retExpr.code)
+        co.code.extend(retExpr.code)
+
+        # If your convention needs a return register, set it here
+        co.temp = retExpr.temp
+        co.type = retExpr.type
     co.code.append(Halt())
-    co.type = None
     return co
+
 
 
   
@@ -253,31 +305,37 @@ class CodeGenerator(AbstractASTVisitor):
 
 
   def rvalify(self, lco : CodeObject) -> CodeObject:
+    # If already rval → return
+    if not lco.lval:
+        return lco
 
-    assert(lco.lval is True)
-    assert(lco.isVar() is True)
-    
+    # If not a variable → already computed
+    if not lco.isVar():
+        return lco
+
     co = CodeObject()
 
     address = self.generateAddrFromVariable(lco)
-    temp1 = self.generateTemp(Scope.Type.INT) # Addresses are always ints
-    co.code.append(La(temp1, address)) # Load address (global only)
+    temp1 = self.generateTemp(Scope.Type.INT)
+    co.code.append(La(temp1, address))
 
-    if lco.type is Scope.Type.INT:
-      temp2 = self.generateTemp(Scope.Type.INT)
-      co.code.append(Lw(temp2, temp1, '0'))
+    if lco.type == Scope.Type.INT:
+        temp2 = self.generateTemp(Scope.Type.INT)
+        co.code.append(Lw(temp2, temp1, '0'))
 
-    elif lco.type is Scope.Type.FLOAT:
-      temp2 = self.generateTemp(Scope.Type.FLOAT)
-      co.code.append(Flw(temp2, temp1, '0'))
+    elif lco.type == Scope.Type.FLOAT:
+        temp2 = self.generateTemp(Scope.Type.FLOAT)
+        co.code.append(Flw(temp2, temp1, '0'))
+
+    elif lco.type == Scope.Type.STRING:
+        temp2 = temp1
 
     else:
-      raise Exception("Bad type in rvalify!")
+        raise Exception("Bad type in rvalify!")
 
     co.type = lco.type
     co.lval = False
     co.temp = temp2
-
 
     return co
 
